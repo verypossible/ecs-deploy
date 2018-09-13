@@ -127,7 +127,9 @@ def test_deploy_new_tag(get_client, runner):
     assert u"Deploying based on task definition: test-task:1" in result.output
     assert u"Updating task definition" in result.output
     assert u'Changed image of container "webserver" to: "webserver:latest" (was: "webserver:123")' in result.output
-    assert u'Changed image of container "application" to: "application:latest" (was: "application:123")' in result.output
+    assert \
+        u'Changed image of container "application" to: "application:latest" (was: "application:123")' \
+        in result.output
     assert u'Successfully created revision: 2' in result.output
     assert u'Successfully deregistered revision: 1' in result.output
     assert u'Successfully changed task definition to: test-task:2' in result.output
@@ -142,7 +144,9 @@ def test_deploy_one_new_image(get_client, runner):
     assert not result.exception
     assert u"Deploying based on task definition: test-task:1" in result.output
     assert u"Updating task definition" in result.output
-    assert u'Changed image of container "application" to: "application:latest" (was: "application:123")' in result.output
+    assert \
+        u'Changed image of container "application" to: "application:latest" (was: "application:123")' \
+        in result.output
     assert u'Successfully created revision: 2' in result.output
     assert u'Successfully deregistered revision: 1' in result.output
     assert u'Successfully changed task definition to: test-task:2' in result.output
@@ -152,14 +156,17 @@ def test_deploy_one_new_image(get_client, runner):
 @patch('ecs_deploy.cli.get_client')
 def test_deploy_two_new_images(get_client, runner):
     get_client.return_value = EcsTestClient('acces_key', 'secret_key')
-    result = runner.invoke(cli.deploy, (CLUSTER_NAME, SERVICE_NAME, '-i', 'application', 'application:latest',
-                                        '-i', 'webserver', 'webserver:latest'))
+    result = runner.invoke(
+        cli.deploy,
+        (CLUSTER_NAME, SERVICE_NAME, '-i', 'application', 'application:latest', '-i', 'webserver', 'webserver:latest'))
     assert result.exit_code == 0
     assert not result.exception
     assert u"Deploying based on task definition: test-task:1" in result.output
     assert u"Updating task definition" in result.output
     assert u'Changed image of container "webserver" to: "webserver:latest" (was: "webserver:123")' in result.output
-    assert u'Changed image of container "application" to: "application:latest" (was: "application:123")' in result.output
+    assert \
+        u'Changed image of container "application" to: "application:latest" (was: "application:123")' \
+        in result.output
     assert u'Successfully created revision: 2' in result.output
     assert u'Successfully deregistered revision: 1' in result.output
     assert u'Successfully changed task definition to: test-task:2' in result.output
@@ -184,9 +191,8 @@ def test_deploy_one_new_command(get_client, runner):
 @patch('ecs_deploy.cli.get_client')
 def test_deploy_one_new_environment_variable(get_client, runner):
     get_client.return_value = EcsTestClient('acces_key', 'secret_key')
-    result = runner.invoke(cli.deploy, (CLUSTER_NAME, SERVICE_NAME,
-                                        '-e', 'application', 'foo', 'bar',
-                                        '-e', 'webserver', 'foo', 'baz'))
+    result = runner.invoke(
+        cli.deploy, (CLUSTER_NAME, SERVICE_NAME, '-e', 'application', 'foo', 'bar', '-e', 'webserver', 'foo', 'baz'))
 
     assert result.exit_code == 0
     assert not result.exception
@@ -222,7 +228,8 @@ def test_deploy_without_changing_environment_value(get_client, runner):
 @patch('ecs_deploy.cli.get_client')
 def test_deploy_without_diff(get_client, runner):
     get_client.return_value = EcsTestClient('acces_key', 'secret_key')
-    result = runner.invoke(cli.deploy, (CLUSTER_NAME, SERVICE_NAME, '-t', 'latest', '-e', 'webserver', 'foo', 'barz', '--no-diff'))
+    result = runner.invoke(cli.deploy,
+                           (CLUSTER_NAME, SERVICE_NAME, '-t', 'latest', '-e', 'webserver', 'foo', 'barz', '--no-diff'))
 
     assert result.exit_code == 0
     assert not result.exception
@@ -273,11 +280,8 @@ def test_deploy_ignore_warnings(get_client, runner):
 @patch('ecs_deploy.cli.get_client')
 def test_deploy_with_newrelic(get_client, newrelic, runner):
     get_client.return_value = EcsTestClient('acces_key', 'secret_key')
-    result = runner.invoke(cli.deploy, (CLUSTER_NAME, SERVICE_NAME,
-                                        '-t', 'my-tag',
-                                        '--newrelic-apikey', 'test',
-                                        '--newrelic-appid', 'test',
-                                        '--comment', 'Lorem Ipsum'))
+    result = runner.invoke(cli.deploy, (CLUSTER_NAME, SERVICE_NAME, '-t', 'my-tag', '--newrelic-apikey', 'test',
+                                        '--newrelic-appid', 'test', '--comment', 'Lorem Ipsum'))
     assert result.exit_code == 0
     assert not result.exception
     assert u"Deploying based on task definition: test-task:1" in result.output
@@ -287,11 +291,7 @@ def test_deploy_with_newrelic(get_client, newrelic, runner):
     assert u'Deployment successful' in result.output
     assert u"Recording deployment in New Relic" in result.output
 
-    newrelic.assert_called_once_with(
-        'my-tag',
-        '',
-        'Lorem Ipsum'
-    )
+    newrelic.assert_called_once_with('my-tag', '', 'Lorem Ipsum')
 
 
 @patch('ecs_deploy.newrelic.Deployment.deploy')
@@ -301,10 +301,8 @@ def test_deploy_with_newrelic_errors(get_client, deploy, runner):
     deploy.side_effect = e
 
     get_client.return_value = EcsTestClient('acces_key', 'secret_key')
-    result = runner.invoke(cli.deploy, (CLUSTER_NAME, SERVICE_NAME,
-                                        '-t', 'test',
-                                        '--newrelic-apikey', 'test',
-                                        '--newrelic-appid', 'test'))
+    result = runner.invoke(
+        cli.deploy, (CLUSTER_NAME, SERVICE_NAME, '-t', 'test', '--newrelic-apikey', 'test', '--newrelic-appid', 'test'))
 
     assert result.exit_code == 1
     assert u"Recording deployment failed" in result.output
@@ -335,9 +333,13 @@ def test_deploy_with_timeout(get_client, runner):
 @patch('ecs_deploy.cli.get_client')
 def test_deploy_unknown_task_definition_arn(get_client, runner):
     get_client.return_value = EcsTestClient('acces_key', 'secret_key')
-    result = runner.invoke(cli.deploy, (CLUSTER_NAME, SERVICE_NAME, '--task', u'arn:aws:ecs:eu-central-1:123456789012:task-definition/foobar:55'))
+    result = runner.invoke(
+        cli.deploy,
+        (CLUSTER_NAME, SERVICE_NAME, '--task', u'arn:aws:ecs:eu-central-1:123456789012:task-definition/foobar:55'))
     assert result.exit_code == 1
-    assert u"Unknown task definition arn: arn:aws:ecs:eu-central-1:123456789012:task-definition/foobar:55" in result.output
+    assert \
+        u"Unknown task definition arn: arn:aws:ecs:eu-central-1:123456789012:task-definition/foobar:55" \
+        in result.output
 
 
 @patch('ecs_deploy.cli.get_client')
@@ -415,14 +417,6 @@ def test_scale_with_timeout(get_client, runner):
 
 
 @patch('ecs_deploy.cli.get_client')
-def test_scale_without_credentials(get_client, runner):
-    get_client.return_value = EcsTestClient()
-    result = runner.invoke(cli.scale, (CLUSTER_NAME, SERVICE_NAME, '2'))
-    assert result.exit_code == 1
-    assert result.output == u'Unable to locate credentials. Configure credentials by running "aws configure".\n\n'
-
-
-@patch('ecs_deploy.cli.get_client')
 def test_run_task(get_client, runner):
     get_client.return_value = EcsTestClient('acces_key', 'secret_key')
     result = runner.invoke(cli.run, (CLUSTER_NAME, 'test-task'))
@@ -441,6 +435,7 @@ def test_run_task_with_command(get_client, runner):
     result = runner.invoke(cli.run, (CLUSTER_NAME, 'test-task', '2', '-c', 'webserver', 'date'))
 
     assert not result.exception
+
     assert result.exit_code == 0
 
     assert u"Using task definition: test-task" in result.output
@@ -499,10 +494,11 @@ def test_run_task_without_credentials(get_client, runner):
 
 @patch('ecs_deploy.cli.get_client')
 def test_run_task_with_invalid_cluster(get_client, runner):
-    get_client.return_value = EcsTestClient('acces_key', 'secret_key')
+    get_client.return_value = EcsTestClient('acces_key', 'secret_key', '')
     result = runner.invoke(cli.run, ('unknown-cluster', 'test-task'))
     assert result.exit_code == 1
-    assert result.output == u'An error occurred (ClusterNotFoundException) when calling the RunTask operation: Cluster not found.\n\n'
+    assert result.output == \
+        u'An error occurred (ClusterNotFoundException) when calling the RunTask operation: Cluster not found.\n\n'
 
 
 @patch('ecs_deploy.newrelic.Deployment')

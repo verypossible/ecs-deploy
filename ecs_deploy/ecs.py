@@ -6,73 +6,59 @@ from dateutil.tz.tz import tzlocal
 
 
 class EcsClient(object):
-    def __init__(self, access_key_id=None, secret_access_key=None,
-                 region=None, profile=None):
-        session = Session(aws_access_key_id=access_key_id,
-                          aws_secret_access_key=secret_access_key,
-                          region_name=region,
-                          profile_name=profile)
+
+    def __init__(self, access_key_id=None, secret_access_key=None, region=None, profile=None):
+        session = Session(
+            aws_access_key_id=access_key_id,
+            aws_secret_access_key=secret_access_key,
+            region_name=region,
+            profile_name=profile)
         self.boto = session.client(u'ecs')
 
     def describe_services(self, cluster_name, service_name):
-        return self.boto.describe_services(
-            cluster=cluster_name,
-            services=[service_name]
-        )
+        return self.boto.describe_services(cluster=cluster_name, services=[service_name])
 
     def describe_task_definition(self, task_definition_arn):
         try:
-            return self.boto.describe_task_definition(
-                taskDefinition=task_definition_arn
-            )
+            return self.boto.describe_task_definition(taskDefinition=task_definition_arn)
         except ClientError:
-            raise UnknownTaskDefinitionError(
-                u'Unknown task definition arn: %s' % task_definition_arn
-            )
+            raise UnknownTaskDefinitionError(u'Unknown task definition arn: %s' % task_definition_arn)
 
     def list_tasks(self, cluster_name, service_name):
-        return self.boto.list_tasks(
-            cluster=cluster_name,
-            serviceName=service_name
-        )
+        return self.boto.list_tasks(cluster=cluster_name, serviceName=service_name)
 
     def describe_tasks(self, cluster_name, task_arns):
         return self.boto.describe_tasks(cluster=cluster_name, tasks=task_arns)
 
-    def register_task_definition(self, family, containers, volumes, role_arn,
-                                 additional_properties):
+    def register_task_definition(self, family, containers, volumes, role_arn, additional_properties):
         return self.boto.register_task_definition(
             family=family,
             containerDefinitions=containers,
             volumes=volumes,
             taskRoleArn=role_arn,
-            **additional_properties
-        )
+            **additional_properties)
 
     def deregister_task_definition(self, task_definition_arn):
-        return self.boto.deregister_task_definition(
-            taskDefinition=task_definition_arn
-        )
+        return self.boto.deregister_task_definition(taskDefinition=task_definition_arn)
 
     def update_service(self, cluster, service, desired_count, task_definition):
         return self.boto.update_service(
-            cluster=cluster,
-            service=service,
-            desiredCount=desired_count,
-            taskDefinition=task_definition
-        )
+            cluster=cluster, service=service, desiredCount=desired_count, taskDefinition=task_definition)
 
-    def run_task(self, cluster, task_definition, count, started_by, overrides):
+    def run_task(self, cluster, task_definition, launch_type, count, started_by, overrides, networkConfiguration=None):
         return self.boto.run_task(
             cluster=cluster,
             taskDefinition=task_definition,
             count=count,
             startedBy=started_by,
-            overrides=overrides
+            overrides=overrides,
+            launchType=launch_type,
+            networkConfiguration=networkConfiguration or {},
         )
 
 
 class EcsService(dict):
+
     def __init__(self, cluster, service_definition=None, **kwargs):
         self._cluster = cluster
         super(EcsService, self).__init__(service_definition, **kwargs)
@@ -115,16 +101,11 @@ class EcsService(dict):
 
     @property
     def errors(self):
-        return self.get_warnings(
-            since=self.deployment_updated_at
-        )
+        return self.get_warnings(since=self.deployment_updated_at)
 
     @property
     def older_errors(self):
-        return self.get_warnings(
-            since=self.deployment_created_at,
-            until=self.deployment_updated_at
-        )
+        return self.get_warnings(since=self.deployment_created_at, until=self.deployment_updated_at)
 
     def get_warnings(self, since=None, until=None):
         since = since or self.deployment_created_at
@@ -139,9 +120,18 @@ class EcsService(dict):
 
 
 class EcsTaskDefinition(object):
-    def __init__(self, containerDefinitions, volumes, family, revision,
-                 status, taskDefinitionArn, requiresAttributes=None,
-                 taskRoleArn=None, compatibilities=None, **kwargs):
+
+    def __init__(self,
+                 containerDefinitions,
+                 volumes,
+                 family,
+                 revision,
+                 status,
+                 taskDefinitionArn,
+                 requiresAttributes=None,
+                 taskRoleArn=None,
+                 compatibilities=None,
+                 **kwargs):
         self.containers = containerDefinitions
         self.volumes = volumes
         self.family = family
@@ -150,6 +140,8 @@ class EcsTaskDefinition(object):
         self.arn = taskDefinitionArn
         self.requires_attributes = requiresAttributes or {}
         self.role_arn = taskRoleArn or u''
+        self.is_fargate = True if 'FARGATE' in kwargs.get('requiresCompatibilities', []) else False
+
         self.additional_properties = kwargs
         self._diff = []
 
@@ -198,22 +190,14 @@ class EcsTaskDefinition(object):
             if container[u'name'] in images:
                 new_image = images[container[u'name']]
                 diff = EcsTaskDefinitionDiff(
-                    container=container[u'name'],
-                    field=u'image',
-                    value=new_image,
-                    old_value=container[u'image']
-                )
+                    container=container[u'name'], field=u'image', value=new_image, old_value=container[u'image'])
                 self._diff.append(diff)
                 container[u'image'] = new_image
             elif tag:
                 image_definition = container[u'image'].rsplit(u':', 1)
                 new_image = u'%s:%s' % (image_definition[0], tag.strip())
                 diff = EcsTaskDefinitionDiff(
-                    container=container[u'name'],
-                    field=u'image',
-                    value=new_image,
-                    old_value=container[u'image']
-                )
+                    container=container[u'name'], field=u'image', value=new_image, old_value=container[u'image'])
                 self._diff.append(diff)
                 container[u'image'] = new_image
 
@@ -226,8 +210,7 @@ class EcsTaskDefinition(object):
                     container=container[u'name'],
                     field=u'command',
                     value=new_command,
-                    old_value=container.get(u'command')
-                )
+                    old_value=container.get(u'command'))
                 self._diff.append(diff)
                 container[u'command'] = [new_command]
 
@@ -241,10 +224,7 @@ class EcsTaskDefinition(object):
         self.validate_container_options(**environment)
         for container in self.containers:
             if container[u'name'] in environment:
-                self.apply_container_environment(
-                    container=container,
-                    new_environment=environment[container[u'name']]
-                )
+                self.apply_container_environment(container=container, new_environment=environment[container[u'name']])
 
     def apply_container_environment(self, container, new_environment):
         environment = container.get('environment', {})
@@ -256,37 +236,25 @@ class EcsTaskDefinition(object):
             return
 
         diff = EcsTaskDefinitionDiff(
-            container=container[u'name'],
-            field=u'environment',
-            value=merged,
-            old_value=old_environment
-        )
+            container=container[u'name'], field=u'environment', value=merged, old_value=old_environment)
         self._diff.append(diff)
 
-        container[u'environment'] = [
-            {"name": e, "value": merged[e]} for e in merged
-        ]
+        container[u'environment'] = [{"name": e, "value": merged[e]} for e in merged]
 
     def validate_container_options(self, **container_options):
         for container_name in container_options:
             if container_name not in self.container_names:
-                raise UnknownContainerError(
-                    u'Unknown container: %s' % container_name
-                )
+                raise UnknownContainerError(u'Unknown container: %s' % container_name)
 
     def set_role_arn(self, role_arn):
         if role_arn:
-            diff = EcsTaskDefinitionDiff(
-                container=None,
-                field=u'role_arn',
-                value=role_arn,
-                old_value=self.role_arn
-            )
+            diff = EcsTaskDefinitionDiff(container=None, field=u'role_arn', value=role_arn, old_value=self.role_arn)
             self.role_arn = role_arn
             self._diff.append(diff)
 
 
 class EcsTaskDefinitionDiff(object):
+
     def __init__(self, container, field, value, old_value):
         self.container = container
         self.field = field
@@ -301,18 +269,10 @@ class EcsTaskDefinitionDiff(object):
                 self.old_value,
             ))
         elif self.container:
-            return u'Changed %s of container "%s" to: "%s" (was: "%s")' % (
-                self.field,
-                self.container,
-                self.value,
-                self.old_value
-            )
+            return u'Changed %s of container "%s" to: "%s" (was: "%s")' % (self.field, self.container, self.value,
+                                                                           self.old_value)
         else:
-            return u'Changed %s to: "%s" (was: "%s")' % (
-                self.field,
-                self.value,
-                self.old_value
-            )
+            return u'Changed %s to: "%s" (was: "%s")' % (self.field, self.value, self.old_value)
 
     @staticmethod
     def _get_environment_diffs(container, env, old_env):
@@ -327,6 +287,7 @@ class EcsTaskDefinitionDiff(object):
 
 
 class EcsAction(object):
+
     def __init__(self, client, cluster_name, service_name):
         self._client = client
         self._cluster_name = cluster_name
@@ -336,39 +297,26 @@ class EcsAction(object):
             if service_name:
                 self._service = self.get_service()
         except IndexError:
-            raise EcsConnectionError(
-                u'An error occurred when calling the DescribeServices '
-                u'operation: Service not found.'
-            )
+            raise EcsConnectionError(u'An error occurred when calling the DescribeServices '
+                                     u'operation: Service not found.')
         except ClientError as e:
             raise EcsConnectionError(str(e))
         except NoCredentialsError:
-            raise EcsConnectionError(
-                u'Unable to locate credentials. Configure credentials '
-                u'by running "aws configure".'
-            )
+            raise EcsConnectionError(u'Unable to locate credentials. Configure credentials '
+                                     u'by running "aws configure".')
 
     def get_service(self):
         services_definition = self._client.describe_services(
-            cluster_name=self._cluster_name,
-            service_name=self._service_name
-        )
-        return EcsService(
-            cluster=self._cluster_name,
-            service_definition=services_definition[u'services'][0]
-        )
+            cluster_name=self._cluster_name, service_name=self._service_name)
+        return EcsService(cluster=self._cluster_name, service_definition=services_definition[u'services'][0])
 
     def get_current_task_definition(self, service):
         return self.get_task_definition(service.task_definition)
 
     def get_task_definition(self, task_definition):
-        task_definition_payload = self._client.describe_task_definition(
-            task_definition_arn=task_definition
-        )
+        task_definition_payload = self._client.describe_task_definition(task_definition_arn=task_definition)
 
-        task_definition = EcsTaskDefinition(
-            **task_definition_payload[u'taskDefinition']
-        )
+        task_definition = EcsTaskDefinition(**task_definition_payload[u'taskDefinition'])
         return task_definition
 
     def update_task_definition(self, task_definition):
@@ -377,8 +325,7 @@ class EcsAction(object):
             containers=task_definition.containers,
             volumes=task_definition.volumes,
             role_arn=task_definition.role_arn,
-            additional_properties=task_definition.additional_properties
-        )
+            additional_properties=task_definition.additional_properties)
         new_task_definition = EcsTaskDefinition(**response[u'taskDefinition'])
         return new_task_definition
 
@@ -390,31 +337,21 @@ class EcsAction(object):
             cluster=service.cluster,
             service=service.name,
             desired_count=service.desired_count,
-            task_definition=service.task_definition
-        )
+            task_definition=service.task_definition)
         return EcsService(self._cluster_name, response[u'service'])
 
     def is_deployed(self, service):
         if len(service[u'deployments']) != 1:
             return False
-        running_tasks = self._client.list_tasks(
-            cluster_name=service.cluster,
-            service_name=service.name
-        )
+        running_tasks = self._client.list_tasks(cluster_name=service.cluster, service_name=service.name)
         if not running_tasks[u'taskArns']:
             return service.desired_count == 0
-        running_count = self.get_running_tasks_count(
-            service=service,
-            task_arns=running_tasks[u'taskArns']
-        )
+        running_count = self.get_running_tasks_count(service=service, task_arns=running_tasks[u'taskArns'])
         return service.desired_count == running_count
 
     def get_running_tasks_count(self, service, task_arns):
         running_count = 0
-        tasks_details = self._client.describe_tasks(
-            cluster_name=self._cluster_name,
-            task_arns=task_arns
-        )
+        tasks_details = self._client.describe_tasks(cluster_name=self._cluster_name, task_arns=task_arns)
         for task in tasks_details[u'tasks']:
             arn = task[u'taskDefinitionArn']
             status = task[u'lastStatus']
@@ -440,6 +377,7 @@ class EcsAction(object):
 
 
 class DeployAction(EcsAction):
+
     def deploy(self, task_definition):
         try:
             self._service.set_task_definition(task_definition)
@@ -449,6 +387,7 @@ class DeployAction(EcsAction):
 
 
 class ScaleAction(EcsAction):
+
     def scale(self, desired_count):
         try:
             self._service.set_desired_count(desired_count)
@@ -458,20 +397,41 @@ class ScaleAction(EcsAction):
 
 
 class RunAction(EcsAction):
-    def __init__(self, client, cluster_name):
+
+    def __init__(self, client, cluster_name, service_name):
         super(RunAction, self).__init__(client, cluster_name, None)
         self._client = client
         self._cluster_name = cluster_name
+        self._service_name = service_name
         self.started_tasks = []
 
+    def get_service(self):
+        services_definition = self._client.describe_services(
+            cluster_name=self._cluster_name, service_name=self._service_name)
+        return EcsService(cluster=self._cluster_name, service_definition=services_definition[u'services'][0])
+
+    def _get_network_configuration(self, task_definition):
+        if not task_definition.is_fargate:
+            return {}
+
+        service = self.get_service()
+        return service['networkConfiguration']
+
     def run(self, task_definition, count, started_by):
+        if task_definition.is_fargate and not self._service_name:
+            raise EcsError('service must be provided when executing run commands for Fargate type ECS Services')
+
+        launch_type = 'FARGATE' if task_definition.is_fargate else 'EC2'
+
         try:
             result = self._client.run_task(
                 cluster=self._cluster_name,
                 task_definition=task_definition.family_revision,
+                launch_type=launch_type,
                 count=count,
                 started_by=started_by,
-                overrides=dict(containerOverrides=task_definition.get_overrides())
+                overrides=dict(containerOverrides=task_definition.get_overrides()),
+                networkConfiguration=self._get_network_configuration(task_definition),
             )
             self.started_tasks = result['tasks']
             return True

@@ -23,14 +23,11 @@ class Deployment(object):
 
     @property
     def headers(self):
-        return {
-            'Content-Type': 'application/json',
-            'X-Api-Key': self.__api_key
-        }
+        return {'Content-Type': 'application/json', 'X-Api-Key': self.__api_key}
 
     def get_payload(self, revision, changelog, description):
         return {
-            "deployment" : {
+            "deployment": {
                 "revision": str(revision),
                 "changelog": str(changelog),
                 "description": str(description),
@@ -44,8 +41,7 @@ class Deployment(object):
 
         if response.status_code != 201:
             try:
-                raise NewRelicDeploymentException('Recording deployment failed: %s' %
-                                                  response.json()['error']['title'])
+                raise NewRelicDeploymentException('Recording deployment failed: %s' % response.json()['error']['title'])
             except (AttributeError, KeyError):
                 raise NewRelicDeploymentException('Recording deployment failed')
 

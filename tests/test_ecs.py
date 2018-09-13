@@ -11,7 +11,7 @@ from mock.mock import patch
 from ecs_deploy.ecs import EcsService, EcsTaskDefinition, \
     UnknownContainerError, EcsTaskDefinitionDiff, EcsClient, \
     EcsAction, EcsConnectionError, DeployAction, ScaleAction, RunAction, \
-    UnknownTaskDefinitionError
+    UnknownTaskDefinitionError, EcsError
 
 CLUSTER_NAME = u'test-cluster'
 CLUSTER_ARN = u'arn:aws:ecs:eu-central-1:123456789012:cluster/%s' % CLUSTER_NAME
@@ -24,21 +24,43 @@ TASK_DEFINITION_ROLE_ARN_1 = u'arn:test:role:1'
 TASK_DEFINITION_ARN_1 = u'arn:aws:ecs:eu-central-1:123456789012:task-definition/%s:%s' % (TASK_DEFINITION_FAMILY_1,
                                                                                           TASK_DEFINITION_REVISION_1)
 TASK_DEFINITION_VOLUMES_1 = []
-TASK_DEFINITION_CONTAINERS_1 = [
-    {u'name': u'webserver', u'image': u'webserver:123', u'command': u'run',
-     u'environment': ({"name": "foo", "value": "bar"}, {"name": "lorem", "value": "ipsum"})},
-    {u'name': u'application', u'image': u'application:123', u'command': u'run'}
-]
+TASK_DEFINITION_CONTAINERS_1 = [{
+    u'name': u'webserver',
+    u'image': u'webserver:123',
+    u'command': u'run',
+    u'environment': ({
+        "name": "foo",
+        "value": "bar"
+    }, {
+        "name": "lorem",
+        "value": "ipsum"
+    })
+}, {
+    u'name': u'application',
+    u'image': u'application:123',
+    u'command': u'run'
+}]
 TASK_DEFINITION_FAMILY_2 = u'test-task'
 TASK_DEFINITION_REVISION_2 = 2
 TASK_DEFINITION_ARN_2 = u'arn:aws:ecs:eu-central-1:123456789012:task-definition/%s:%s' % (TASK_DEFINITION_FAMILY_2,
                                                                                           TASK_DEFINITION_REVISION_2)
 TASK_DEFINITION_VOLUMES_2 = []
-TASK_DEFINITION_CONTAINERS_2 = [
-    {u'name': u'webserver', u'image': u'webserver:123', u'command': u'run',
-     u'environment': ({"name": "foo", "value": "bar"}, {"name": "lorem", "value": "ipsum"})},
-    {u'name': u'application', u'image': u'application:123', u'command': u'run'}
-]
+TASK_DEFINITION_CONTAINERS_2 = [{
+    u'name': u'webserver',
+    u'image': u'webserver:123',
+    u'command': u'run',
+    u'environment': ({
+        "name": "foo",
+        "value": "bar"
+    }, {
+        "name": "lorem",
+        "value": "ipsum"
+    })
+}, {
+    u'name': u'application',
+    u'image': u'application:123',
+    u'command': u'run'
+}]
 
 PAYLOAD_TASK_DEFINITION_1 = {
     u'taskDefinitionArn': TASK_DEFINITION_ARN_1,
@@ -66,6 +88,18 @@ PAYLOAD_TASK_DEFINITION_2 = {
     u'compatibilities': [u'EC2'],
 }
 
+PAYLOAD_FARGATE_TASK_DEFINITION_ = {
+    u'taskDefinitionArn': TASK_DEFINITION_ARN_2,
+    u'family': TASK_DEFINITION_FAMILY_2,
+    u'revision': TASK_DEFINITION_REVISION_2,
+    u'volumes': deepcopy(TASK_DEFINITION_VOLUMES_2),
+    u'containerDefinitions': deepcopy(TASK_DEFINITION_CONTAINERS_2),
+    u'status': u'active',
+    u'unknownProperty': u'lorem-ipsum',
+    u'compatibilities': [u'EC2', u'FARGATE'],
+    u'requiresCompatibilities': [u'FARGATE'],
+}
+
 TASK_ARN_1 = u'arn:aws:ecs:eu-central-1:123456789012:task/12345678-1234-1234-1234-123456789011'
 TASK_ARN_2 = u'arn:aws:ecs:eu-central-1:123456789012:task/12345678-1234-1234-1234-123456789012'
 
@@ -74,7 +108,9 @@ PAYLOAD_TASK_1 = {
     u'clusterArn': CLUSTER_ARN,
     u'taskDefinitionArn': TASK_DEFINITION_ARN_1,
     u'containerInstanceArn': u'arn:aws:ecs:eu-central-1:123456789012:container-instance/12345678-123456-123456-123456',
-    u'overrides': {u'containerOverrides': []},
+    u'overrides': {
+        u'containerOverrides': []
+    },
     u'lastStatus': u'RUNNING',
     u'desiredStatus': u'RUNNING',
     u'containers': TASK_DEFINITION_CONTAINERS_1,
@@ -86,38 +122,36 @@ PAYLOAD_TASK_2 = {
     u'clusterArn': CLUSTER_ARN,
     u'taskDefinitionArn': TASK_DEFINITION_ARN_1,
     u'containerInstanceArn': u'arn:aws:ecs:eu-central-1:123456789012:container-instance/12345678-123456-123456-123456',
-    u'overrides': {u'containerOverrides': []},
+    u'overrides': {
+        u'containerOverrides': []
+    },
     u'lastStatus': u'RUNNING',
     u'desiredStatus': u'RUNNING',
     u'containers': TASK_DEFINITION_CONTAINERS_1,
     u'startedBy': SERVICE_ARN
 }
 
-PAYLOAD_DEPLOYMENTS = [
-    {
-        u'status': u'PRIMARY',
-        u'pendingCount': 0,
-        u'desiredCount': DESIRED_COUNT,
-        u'runningCount': DESIRED_COUNT,
-        u'taskDefinition': TASK_DEFINITION_ARN_1,
-        u'createdAt': datetime(2016, 3, 11, 12, 0, 0, 000000, tzinfo=tzlocal()),
-        u'updatedAt': datetime(2016, 3, 11, 12, 5, 0, 000000, tzinfo=tzlocal()),
-        u'id': u'ecs-svc/0000000000000000002',
-    }
-]
+PAYLOAD_DEPLOYMENTS = [{
+    u'status': u'PRIMARY',
+    u'pendingCount': 0,
+    u'desiredCount': DESIRED_COUNT,
+    u'runningCount': DESIRED_COUNT,
+    u'taskDefinition': TASK_DEFINITION_ARN_1,
+    u'createdAt': datetime(2016, 3, 11, 12, 0, 0, 000000, tzinfo=tzlocal()),
+    u'updatedAt': datetime(2016, 3, 11, 12, 5, 0, 000000, tzinfo=tzlocal()),
+    u'id': u'ecs-svc/0000000000000000002',
+}]
 
-PAYLOAD_EVENTS = [
-    {
-        u'id': u'error',
-        u'createdAt': datetime.now(tz=tzlocal()),
-        u'message': u'Service was unable to Lorem Ipsum'
-    },
-    {
-        u'id': u'older_error',
-        u'createdAt': datetime(2016, 3, 11, 12, 0, 10, 000000, tzinfo=tzlocal()),
-        u'message': u'Service was unable to Lorem Ipsum'
-    }
-]
+PAYLOAD_EVENTS = [{
+    u'id': u'error',
+    u'createdAt': datetime.now(tz=tzlocal()),
+    u'message': u'Service was unable to Lorem Ipsum'
+},
+                  {
+                      u'id': u'older_error',
+                      u'createdAt': datetime(2016, 3, 11, 12, 0, 10, 000000, tzinfo=tzlocal()),
+                      u'message': u'Service was unable to Lorem Ipsum'
+                  }]
 
 PAYLOAD_SERVICE = {
     u'serviceName': SERVICE_NAME,
@@ -143,25 +177,15 @@ PAYLOAD_SERVICE_WITHOUT_DEPLOYMENTS = {
     u'events': []
 }
 
-RESPONSE_SERVICE = {
-    u"service": PAYLOAD_SERVICE
-}
+RESPONSE_SERVICE = {u"service": PAYLOAD_SERVICE}
 
-RESPONSE_SERVICE_WITH_ERRORS = {
-    u"service": PAYLOAD_SERVICE_WITH_ERRORS
-}
+RESPONSE_SERVICE_WITH_ERRORS = {u"service": PAYLOAD_SERVICE_WITH_ERRORS}
 
-RESPONSE_DESCRIBE_SERVICES = {
-    u"services": [PAYLOAD_SERVICE]
-}
+RESPONSE_DESCRIBE_SERVICES = {u"services": [PAYLOAD_SERVICE]}
 
-RESPONSE_TASK_DEFINITION = {
-    u"taskDefinition": PAYLOAD_TASK_DEFINITION_1
-}
+RESPONSE_TASK_DEFINITION = {u"taskDefinition": PAYLOAD_TASK_DEFINITION_1}
 
-RESPONSE_TASK_DEFINITION_2 = {
-    u"taskDefinition": PAYLOAD_TASK_DEFINITION_2
-}
+RESPONSE_TASK_DEFINITION_2 = {u"taskDefinition": PAYLOAD_TASK_DEFINITION_2}
 
 RESPONSE_TASK_DEFINITIONS = {
     TASK_DEFINITION_ARN_1: RESPONSE_TASK_DEFINITION,
@@ -171,21 +195,13 @@ RESPONSE_TASK_DEFINITIONS = {
     u'test-task': RESPONSE_TASK_DEFINITION_2,
 }
 
-RESPONSE_LIST_TASKS_2 = {
-    u"taskArns": [TASK_ARN_1, TASK_ARN_2]
-}
+RESPONSE_LIST_TASKS_2 = {u"taskArns": [TASK_ARN_1, TASK_ARN_2]}
 
-RESPONSE_LIST_TASKS_1 = {
-    u"taskArns": [TASK_ARN_1]
-}
+RESPONSE_LIST_TASKS_1 = {u"taskArns": [TASK_ARN_1]}
 
-RESPONSE_LIST_TASKS_0 = {
-    u"taskArns": []
-}
+RESPONSE_LIST_TASKS_0 = {u"taskArns": []}
 
-RESPONSE_DESCRIBE_TASKS = {
-    u"tasks": [PAYLOAD_TASK_1, PAYLOAD_TASK_2]
-}
+RESPONSE_DESCRIBE_TASKS = {u"tasks": [PAYLOAD_TASK_1, PAYLOAD_TASK_2]}
 
 
 @pytest.fixture()
@@ -196,6 +212,11 @@ def task_definition():
 @pytest.fixture
 def task_definition_revision_2():
     return EcsTaskDefinition(**deepcopy(PAYLOAD_TASK_DEFINITION_2))
+
+
+@pytest.fixture()
+def fargate_task_definition():
+    return EcsTaskDefinition(**deepcopy(PAYLOAD_FARGATE_TASK_DEFINITION_))
 
 
 @pytest.fixture
@@ -348,11 +369,11 @@ def test_task_get_overrides_with_command(task_definition):
     task_definition.set_commands(webserver='/usr/bin/python script.py')
     overrides = task_definition.get_overrides()
     assert len(overrides) == 1
-    assert overrides[0]['command'] == ['/usr/bin/python','script.py']
+    assert overrides[0]['command'] == ['/usr/bin/python', 'script.py']
 
 
 def test_task_get_overrides_with_environment(task_definition):
-    task_definition.set_environment((('webserver', 'foo', 'baz'),))
+    task_definition.set_environment((('webserver', 'foo', 'baz'), ))
     overrides = task_definition.get_overrides()
     assert len(overrides) == 1
     assert overrides[0]['name'] == 'webserver'
@@ -361,21 +382,21 @@ def test_task_get_overrides_with_environment(task_definition):
 
 def test_task_get_overrides_with_commandand_environment(task_definition):
     task_definition.set_commands(webserver='/usr/bin/python script.py')
-    task_definition.set_environment((('webserver', 'foo', 'baz'),))
+    task_definition.set_environment((('webserver', 'foo', 'baz'), ))
     overrides = task_definition.get_overrides()
     assert len(overrides) == 1
     assert overrides[0]['name'] == 'webserver'
-    assert overrides[0]['command'] == ['/usr/bin/python','script.py']
+    assert overrides[0]['command'] == ['/usr/bin/python', 'script.py']
     assert dict(name='foo', value='baz') in overrides[0]['environment']
 
 
 def test_task_get_overrides_with_commandand_environment_for_multiple_containers(task_definition):
     task_definition.set_commands(application='/usr/bin/python script.py')
-    task_definition.set_environment((('webserver', 'foo', 'baz'),))
+    task_definition.set_environment((('webserver', 'foo', 'baz'), ))
     overrides = task_definition.get_overrides()
     assert len(overrides) == 2
     assert overrides[0]['name'] == 'application'
-    assert overrides[0]['command'] == ['/usr/bin/python','script.py']
+    assert overrides[0]['command'] == ['/usr/bin/python', 'script.py']
     assert overrides[1]['name'] == 'webserver'
     assert dict(name='foo', value='baz') in overrides[1]['environment']
 
@@ -383,7 +404,7 @@ def test_task_get_overrides_with_commandand_environment_for_multiple_containers(
 def test_task_get_overrides_command(task_definition):
     command = task_definition.get_overrides_command('/usr/bin/python script.py')
     assert isinstance(command, list)
-    assert command == ['/usr/bin/python','script.py']
+    assert command == ['/usr/bin/python', 'script.py']
 
 
 def test_task_get_overrides_environment(task_definition):
@@ -405,10 +426,11 @@ def test_client_init(mocked_init, mocked_client):
 
     EcsClient(u'access_key_id', u'secret_access_key', u'region', u'profile')
 
-    mocked_init.assert_called_once_with(aws_access_key_id=u'access_key_id',
-                                        aws_secret_access_key=u'secret_access_key',
-                                        profile_name=u'profile',
-                                        region_name=u'region')
+    mocked_init.assert_called_once_with(
+        aws_access_key_id=u'access_key_id',
+        aws_secret_access_key=u'secret_access_key',
+        profile_name=u'profile',
+        region_name=u'region')
     mocked_client.assert_called_once_with(u'ecs')
 
 
@@ -460,24 +482,21 @@ def test_client_register_task_definition(client):
         status='active',
         taskDefinitionArn='arn:task',
         requiresAttributes={},
-        unkownProperty='foobar'
-    )
+        unkownProperty='foobar')
 
     client.register_task_definition(
         family=task_definition.family,
         containers=task_definition.containers,
         volumes=task_definition.volumes,
         role_arn=task_definition.role_arn,
-        additional_properties=task_definition.additional_properties
-    )
+        additional_properties=task_definition.additional_properties)
 
     client.boto.register_task_definition.assert_called_once_with(
         family=u'family',
         containerDefinitions=containers,
         volumes=volumes,
         taskRoleArn=role_arn,
-        unkownProperty='foobar'
-    )
+        unkownProperty='foobar')
 
 
 def test_client_deregister_task_definition(client):
@@ -488,28 +507,51 @@ def test_client_deregister_task_definition(client):
 def test_client_update_service(client):
     client.update_service(u'test-cluster', u'test-service', 5, u'task-definition')
     client.boto.update_service.assert_called_once_with(
-        cluster=u'test-cluster',
-        service=u'test-service',
-        desiredCount=5,
-        taskDefinition=u'task-definition'
-    )
+        cluster=u'test-cluster', service=u'test-service', desiredCount=5, taskDefinition=u'task-definition')
 
 
 def test_client_run_task(client):
     client.run_task(
         cluster=u'test-cluster',
         task_definition=u'test-task',
+        launch_type='EC2',
         count=2,
         started_by='test',
-        overrides=dict(foo='bar')
+        overrides=dict(foo='bar'))
+
+    client.boto.run_task.assert_called_once_with(
+        cluster=u'test-cluster',
+        taskDefinition=u'test-task',
+        launchType='EC2',
+        networkConfiguration={},
+        count=2,
+        startedBy='test',
+        overrides=dict(foo='bar'))
+
+
+def test_client_run_fargate_task(client):
+    client.run_task(
+        cluster=u'test-cluster',
+        task_definition=u'test-task',
+        launch_type='FARGATE',
+        count=2,
+        started_by='test',
+        overrides=None,
+        networkConfiguration={'foo': {
+            'bar': 'baz'
+        }},
     )
 
     client.boto.run_task.assert_called_once_with(
         cluster=u'test-cluster',
         taskDefinition=u'test-task',
+        launchType='FARGATE',
+        networkConfiguration={'foo': {
+            'bar': 'baz'
+        }},
         count=2,
         startedBy='test',
-        overrides=dict(foo='bar')
+        overrides=None,
     )
 
 
@@ -523,7 +565,7 @@ def test_ecs_action_init(client):
 
 def test_ecs_action_init_with_invalid_cluster():
     with pytest.raises(EcsConnectionError) as excinfo:
-        client = EcsTestClient(u'access_key',  u'secret_key')
+        client = EcsTestClient(u'access_key', u'secret_key')
         EcsAction(client, u'invliad-cluster', u'test-service')
     assert str(excinfo.value) == u'An error occurred (ClusterNotFoundException) when calling the DescribeServices ' \
                                  u'operation: Cluster not found.'
@@ -531,7 +573,7 @@ def test_ecs_action_init_with_invalid_cluster():
 
 def test_ecs_action_init_with_invalid_service():
     with pytest.raises(EcsConnectionError) as excinfo:
-        client = EcsTestClient(u'access_key',  u'secret_key')
+        client = EcsTestClient(u'access_key', u'secret_key')
         EcsAction(client, u'test-cluster', u'invalid-service')
     assert str(excinfo.value) == u'An error occurred when calling the DescribeServices operation: Service not found.'
 
@@ -558,9 +600,7 @@ def test_ecs_action_get_current_task_definition(client, service):
     action = EcsAction(client, u'test-cluster', u'test-service')
     task_definition = action.get_current_task_definition(service)
 
-    client.describe_task_definition.assert_called_once_with(
-        task_definition_arn=service.task_definition
-    )
+    client.describe_task_definition.assert_called_once_with(task_definition_arn=service.task_definition)
 
     assert isinstance(task_definition, EcsTaskDefinition)
     assert task_definition.family == u'test-task'
@@ -585,8 +625,7 @@ def test_update_task_definition(client, task_definition):
             u'networkMode': u'host',
             u'placementConstraints': {},
             u'unknownProperty': u'lorem-ipsum'
-        }
-    )
+        })
 
 
 @patch.object(EcsClient, '__init__')
@@ -594,9 +633,7 @@ def test_deregister_task_definition(client, task_definition):
     action = EcsAction(client, u'test-cluster', u'test-service')
     action.deregister_task_definition(task_definition)
 
-    client.deregister_task_definition.assert_called_once_with(
-        task_definition.arn
-    )
+    client.deregister_task_definition.assert_called_once_with(task_definition.arn)
 
 
 @patch.object(EcsClient, '__init__')
@@ -611,8 +648,7 @@ def test_update_service(client, service):
         cluster=service.cluster,
         service=service.name,
         desired_count=service.desired_count,
-        task_definition=service.task_definition
-    )
+        task_definition=service.task_definition)
 
 
 @patch.object(EcsClient, '__init__')
@@ -624,10 +660,7 @@ def test_is_deployed(client, service):
     is_deployed = action.is_deployed(service)
 
     assert is_deployed is True
-    client.list_tasks.assert_called_once_with(
-        cluster_name=service.cluster,
-        service_name=service.name
-    )
+    client.list_tasks.assert_called_once_with(cluster_name=service.cluster, service_name=service.name)
 
 
 @patch.object(EcsClient, '__init__')
@@ -685,16 +718,12 @@ def test_deploy_action(client, task_definition_revision_2):
     assert action.service.task_definition == task_definition_revision_2.arn
     assert isinstance(updated_service, EcsService)
 
-    client.describe_services.assert_called_once_with(
-        cluster_name=CLUSTER_NAME,
-        service_name=SERVICE_NAME
-    )
+    client.describe_services.assert_called_once_with(cluster_name=CLUSTER_NAME, service_name=SERVICE_NAME)
     client.update_service.assert_called_once_with(
         cluster=action.service.cluster,
         service=action.service.name,
         desired_count=action.service.desired_count,
-        task_definition=task_definition_revision_2.arn
-    )
+        task_definition=task_definition_revision_2.arn)
 
 
 @patch.object(EcsClient, '__init__')
@@ -705,27 +734,23 @@ def test_scale_action(client):
     assert action.service.desired_count == 5
     assert isinstance(updated_service, EcsService)
 
-    client.describe_services.assert_called_once_with(
-        cluster_name=CLUSTER_NAME,
-        service_name=SERVICE_NAME
-    )
+    client.describe_services.assert_called_once_with(cluster_name=CLUSTER_NAME, service_name=SERVICE_NAME)
     client.update_service.assert_called_once_with(
         cluster=action.service.cluster,
         service=action.service.name,
         desired_count=5,
-        task_definition=action.service.task_definition
-    )
+        task_definition=action.service.task_definition)
 
 
 @patch.object(EcsClient, '__init__')
 def test_run_action(client):
-    action = RunAction(client, CLUSTER_NAME)
+    action = RunAction(client, CLUSTER_NAME, service_name='')
     assert len(action.started_tasks) == 0
 
 
 @patch.object(EcsClient, '__init__')
 def test_run_action_run(client, task_definition):
-    action = RunAction(client, CLUSTER_NAME)
+    action = RunAction(client, CLUSTER_NAME, service_name='')
     client.run_task.return_value = dict(tasks=[dict(taskArn='A'), dict(taskArn='B')])
     action.run(task_definition, 2, 'test')
 
@@ -733,16 +758,58 @@ def test_run_action_run(client, task_definition):
         cluster=CLUSTER_NAME,
         task_definition=task_definition.family_revision,
         count=2,
+        launch_type='EC2',
+        networkConfiguration={},
         started_by='test',
-        overrides=dict(containerOverrides=task_definition.get_overrides())
+        overrides=dict(containerOverrides=task_definition.get_overrides()),
     )
 
     assert len(action.started_tasks) == 2
 
 
+@patch.object(EcsClient, '__init__')
+def test_run_fargate_action_run(client, fargate_task_definition, mocker):
+    action = RunAction(client, CLUSTER_NAME, service_name='my-service-name')
+
+    network_config = {'networkConfiguration': {'vpc': '123', 'subnets': ['a', 'b']}}
+    mocker.patch.object(
+        action,
+        'get_service',
+        return_value=network_config,
+    )
+
+    client.run_task.return_value = dict(tasks=[dict(taskArn='A'), dict(taskArn='B')])
+    action.run(fargate_task_definition, 1, 'test')
+
+    client.run_task.assert_called_once_with(
+        cluster=CLUSTER_NAME,
+        task_definition=fargate_task_definition.family_revision,
+        count=1,
+        launch_type='FARGATE',
+        networkConfiguration=network_config['networkConfiguration'],
+        started_by='test',
+        overrides=dict(containerOverrides=fargate_task_definition.get_overrides()),
+    )
+
+    assert len(action.started_tasks) == 2
+
+
+@patch.object(EcsClient, '__init__')
+def test_run_fargate_action_missing_service_run(client, fargate_task_definition):
+    action = RunAction(client, CLUSTER_NAME, service_name='')
+    with pytest.raises(EcsError):
+        action.run(fargate_task_definition, 1, 'test')
+
+
 class EcsTestClient(object):
-    def __init__(self, access_key_id=None, secret_access_key=None, region=None,
-                 profile=None, deployment_errors=False, client_errors=False,
+
+    def __init__(self,
+                 access_key_id=None,
+                 secret_access_key=None,
+                 region=None,
+                 profile=None,
+                 deployment_errors=False,
+                 client_errors=False,
                  wait=0):
         super(EcsTestClient, self).__init__()
         self.access_key_id = access_key_id
@@ -762,14 +829,8 @@ class EcsTestClient(object):
         if service_name != u'test-service':
             return {u'services': []}
         if self.deployment_errors:
-            return {
-                u"services": [PAYLOAD_SERVICE_WITH_ERRORS],
-                u"failures": []
-            }
-        return {
-            u"services": [PAYLOAD_SERVICE],
-            u"failures": []
-        }
+            return {u"services": [PAYLOAD_SERVICE_WITH_ERRORS], u"failures": []}
+        return {u"services": [PAYLOAD_SERVICE], u"failures": []}
 
     def describe_task_definition(self, task_definition_arn):
         if task_definition_arn in RESPONSE_TASK_DEFINITIONS:
@@ -798,11 +859,12 @@ class EcsTestClient(object):
             return deepcopy(RESPONSE_SERVICE_WITH_ERRORS)
         return deepcopy(RESPONSE_SERVICE)
 
-    def run_task(self, cluster, task_definition, count, started_by, overrides):
+    def run_task(self, cluster, task_definition, launch_type, count, started_by, overrides, networkConfiguration=None):
         if not self.access_key_id or not self.secret_access_key:
             raise EcsConnectionError(u'Unable to locate credentials. Configure credentials by running "aws configure".')
         if cluster == 'unknown-cluster':
-            raise EcsConnectionError(u'An error occurred (ClusterNotFoundException) when calling the RunTask operation: Cluster not found.')
+            raise EcsConnectionError(
+                u'An error occurred (ClusterNotFoundException) when calling the RunTask operation: Cluster not found.')
         if self.deployment_errors:
             error = dict(Error=dict(Code=123, Message="Something went wrong"))
             raise ClientError(error, 'fake_error')
