@@ -276,10 +276,7 @@ def copy(cluster, service, tag, image, command, env, role, task, region, access_
 
         print_diff(td)
 
-        if td.diff:
-            create_task_definition(action, td)
-        else:
-            click.secho('\nNo changes made. Copy not complted due to no diffs\n', fg='red')
+        create_task_definition(action, td)
     except (EcsError, NewRelicException) as e:
         click.secho('%s\n' % str(e), fg='red', err=True)
         exit(1)
@@ -349,6 +346,10 @@ def get_task_definition(action, task):
 
 
 def create_task_definition(action, task_definition):
+    if not task_definition.diff:
+        click.secho('\nNo changes to task definition detected.\n', fg='red')
+        return task_definition
+
     click.secho('Creating new task definition revision')
     new_td = action.update_task_definition(task_definition)
 

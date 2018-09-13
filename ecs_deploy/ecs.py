@@ -191,15 +191,17 @@ class EcsTaskDefinition(object):
                 new_image = images[container[u'name']]
                 diff = EcsTaskDefinitionDiff(
                     container=container[u'name'], field=u'image', value=new_image, old_value=container[u'image'])
-                self._diff.append(diff)
-                container[u'image'] = new_image
+                if diff.has_diffs:
+                    self._diff.append(diff)
+                    container[u'image'] = new_image
             elif tag:
                 image_definition = container[u'image'].rsplit(u':', 1)
                 new_image = u'%s:%s' % (image_definition[0], tag.strip())
                 diff = EcsTaskDefinitionDiff(
                     container=container[u'name'], field=u'image', value=new_image, old_value=container[u'image'])
-                self._diff.append(diff)
-                container[u'image'] = new_image
+                if diff.has_diffs:
+                    self._diff.append(diff)
+                    container[u'image'] = new_image
 
     def set_commands(self, **commands):
         self.validate_container_options(**commands)
@@ -273,6 +275,10 @@ class EcsTaskDefinitionDiff(object):
                                                                            self.old_value)
         else:
             return u'Changed %s to: "%s" (was: "%s")' % (self.field, self.value, self.old_value)
+
+    @property
+    def has_diffs(self):
+        return self.value != self.old_value
 
     @staticmethod
     def _get_environment_diffs(container, env, old_env):
