@@ -8,7 +8,7 @@ import getpass
 from datetime import datetime, timedelta
 
 from ecs_deploy import VERSION
-from ecs_deploy.ecs import DeployAction, ScaleAction, RunAction, EcsClient, \
+from ecs_deploy.ecs import DeployAction, ScaleAction, RunAction, EcsClient, CopyAction, \
     TaskPlacementError, EcsError
 from ecs_deploy.newrelic import Deployment, NewRelicException
 
@@ -229,6 +229,62 @@ def run(cluster, task, count, service, command, env, region, access_key_id, secr
         exit(1)
 
 
+@click.command()
+@click.argument('cluster')
+@click.argument('service')
+@click.option('-t', '--tag', help='Changes the tag for ALL container images')
+@click.option(
+    '-i', '--image', type=(str, str), multiple=True, help='Overwrites the image for a container: <container> <image>')
+@click.option(
+    '-c',
+    '--command',
+    type=(str, str),
+    multiple=True,
+    help='Overwrites the command in a container: <container> <command>')
+@click.option(
+    '-e',
+    '--env',
+    type=(str, str, str),
+    multiple=True,
+    help='Adds or changes an environment variable: <container> <name> <value>')
+@click.option('-r', '--role', type=str, help='Sets the task\'s role ARN: <task role ARN>')
+@click.option(
+    '--task', type=str, help='Task definition to copy. Can be a task ARN or a task family with optional revision')
+@click.option('--region', required=False, help='AWS region (e.g. eu-central-1)')
+@click.option('--access-key-id', required=False, help='AWS access key id')
+@click.option('--secret-access-key', required=False, help='AWS secret access key')
+@click.option('--profile', help='AWS configuration profile name')
+def copy(cluster, service, tag, image, command, env, role, task, region, access_key_id, secret_access_key, profile):
+    """
+    Copy an existing service without deploying it.
+
+    \b
+    CLUSTER is the name of your cluster (e.g. 'my-custer') within ECS.
+    SERVICE is the name of your service (e.g. 'my-app') within ECS.
+
+    When not giving any other options, the task definition will not be changed.
+    """
+    try:
+        client = get_client(access_key_id, secret_access_key, region, profile)
+        action = CopyAction(client, cluster, service)
+
+        td = get_task_definition(action, task)
+        td.set_images(tag, **{key: value for (key, value) in image})
+        td.set_commands(**{key: value for (key, value) in command})
+        td.set_environment(env)
+        td.set_role_arn(role)
+
+        print_diff(td)
+
+        if td.diff:
+            create_task_definition(action, td)
+        else:
+            click.secho('\nNo changes made. Copy not complted due to no diffs\n', fg='red')
+    except (EcsError, NewRelicException) as e:
+        click.secho('%s\n' % str(e), fg='red', err=True)
+        exit(1)
+
+
 def wait_for_finish(action, timeout, title, success_message, failure_message, ignore_warnings):
     click.secho(title, nl=False)
     waiting = True
@@ -393,6 +449,7 @@ def inspect_errors(service, failure_message, ignore_warnings, since, timeout):
 ecs.add_command(deploy)
 ecs.add_command(scale)
 ecs.add_command(run)
+ecs.add_command(copy)
 
 if __name__ == '__main__':    # pragma: no cover
     ecs()

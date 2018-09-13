@@ -376,6 +376,10 @@ class EcsAction(object):
         return self._service_name
 
 
+class CopyAction(EcsAction):
+    pass
+
+
 class DeployAction(EcsAction):
 
     def deploy(self, task_definition):
